@@ -1,0 +1,52 @@
+# Copy this file into your repo as `.github/workflows/security.yml`.
+# It is the ONE caller a consuming repo needs — it invokes the whole suite.
+#
+# Pin the suite to a bastion commit SHA (never @main) and let Dependabot's
+# github-actions ecosystem bump it (see examples/dependabot.yml). The pin covers
+# the umbrella only: its child workflows resolve at bastion@main by design.
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "41 6 * * 1" # Mondays 06:41 UTC
+  workflow_dispatch:
+
+# Top-level least-privilege default; the suite job below widens only what the
+# nested workflows actually request.
+permissions:
+  contents: read
+
+jobs:
+  security:
+    # This job's permissions are the UNION the nested workflows need. A called
+    # workflow can only DOWNGRADE these, never add to them — so they must be
+    # granted here or the nested jobs error at runtime:
+    #   security-events: write  -> OSV reusable job declaration
+    #   pull-requests:   write  -> AI review PR comments
+    #   id-token:        write  -> OpenSSF Scorecard
+    #   actions:         read   -> OSV reusable
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+      id-token: write
+      actions: read
+    uses: YarlisAISolutions/bastion/.github/workflows/security-suite.yml@2182b5aa05a52552232e6ffcb4ca9929b01494d7 # v0.2.0
+    with:
+      # Set to your pushed image (e.g. gcr.io/ystudio-core/app:${{ github.sha }})
+      # to enable the Trivy image scan. Leave empty to scan the filesystem only.
+      # PRs can't pull from the registry, so image scans belong in the build that pushes the image.
+      image-ref: ""
+      # Needs a CLAUDE_API_KEY repo secret; leave false until one exists.
+      run-ai-review: false
+      semgrep-config: "auto"
+      # Advisory for the first ~2 weeks: triage or waive the findings
+      # (policies/exceptions.yaml), then flip to true and make the checks required.
+      enforce: false
+    # With run-ai-review: true, pass ONLY the secret the suite needs (least
+    # privilege, never `inherit`):
+    # secrets:
+    #   CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
